@@ -1,0 +1,21 @@
+{
+  "mae": 0.17813685536384583,
+  "rmse": 0.2397848309815368,
+  "r2_score": 0.9249190234427983,
+  "test_loss": 0.05749676376581192,
+  "training_samples": 236,
+  "test_samples": 60,
+  "features": [
+    "popularity_score",
+    "activity_score",
+    "collab_score",
+    "tech_diversity",
+    "language_score",
+    "repo_count",
+    "credential_score",
+    "credential_count",
+    "credential_diversity"
+  ],
+  "trained_on": "2025-11-23T07:16:48.753850",
+  "epochs_completed": 57
+}
