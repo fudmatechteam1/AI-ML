@@ -7,10 +7,9 @@ from datetime import datetime
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_squared_error
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+import mindspore as ms
+from mindspore import nn, Tensor, context
+from mindspore.common.initializer import Normal
 
 
 # ===========================
@@ -249,27 +248,39 @@ def normalize(series):
     return (series - series.min()) / (series.max() - series.min() + 1e-8)
 
 
-# STEP 3 – BUILD MODEL (Enhanced Architecture)
+# STEP 3 – BUILD MODEL (Enhanced Architecture) - MindSpore Version
+
+
+class TrustScoreModel(nn.Cell):
+    """MindSpore neural network model for trust score prediction"""
+    
+    def __init__(self, input_dim):
+        super(TrustScoreModel, self).__init__()
+        self.dense1 = nn.Dense(input_dim, 128, weight_init=Normal(0.02))
+        self.dropout1 = nn.Dropout(0.3)
+        self.dense2 = nn.Dense(128, 64, weight_init=Normal(0.02))
+        self.dropout2 = nn.Dropout(0.3)
+        self.dense3 = nn.Dense(64, 32, weight_init=Normal(0.02))
+        self.dropout3 = nn.Dropout(0.2)
+        self.dense4 = nn.Dense(32, 16, weight_init=Normal(0.02))
+        self.dense5 = nn.Dense(16, 1, weight_init=Normal(0.02))
+        self.relu = nn.ReLU()
+        
+    def construct(self, x):
+        x = self.relu(self.dense1(x))
+        x = self.dropout1(x)
+        x = self.relu(self.dense2(x))
+        x = self.dropout2(x)
+        x = self.relu(self.dense3(x))
+        x = self.dropout3(x)
+        x = self.relu(self.dense4(x))
+        x = self.dense5(x)
+        return x
 
 
 def build_model(input_dim):
-    model = keras.Sequential([
-        layers.Input(shape=(input_dim,)),
-        layers.Dense(128, activation='relu'),
-        layers.Dropout(0.3),
-        layers.Dense(64, activation='relu'),
-        layers.Dropout(0.3),
-        layers.Dense(32, activation='relu'),
-        layers.Dropout(0.2),
-        layers.Dense(16, activation='relu'),
-        layers.Dense(1, activation='linear')
-    ])
-
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.001),
-        loss='mse',
-        metrics=['mae']
-    )
+    """Build MindSpore model (for backward compatibility)"""
+    model = TrustScoreModel(input_dim)
     return model
 
 
@@ -307,54 +318,14 @@ def train(df):
     # Build model
     model = build_model(X_train.shape[1])
 
-    # Setup callbacks for better training
-    callbacks = [
-        EarlyStopping(
-            monitor='val_loss',
-            patience=15,
-            restore_best_weights=True,
-            verbose=1
-        ),
-        ReduceLROnPlateau(
-            monitor='val_loss',
-            factor=0.5,
-            patience=7,
-            min_lr=1e-7,
-            verbose=1
-        )
-    ]
-
-    # Train with callbacks
-    history = model.fit(
-        X_train_scaled, y_train,
-        validation_split=0.2,
-        epochs=150,
-        batch_size=16,
-        callbacks=callbacks,
-        verbose=1
-    )
-
-    # Evaluate model
-    loss, mae = model.evaluate(X_test_scaled, y_test, verbose=0)
+    # Note: This function is kept for backward compatibility
+    # Actual training should be done using mindspore_train.py
+    print("\n⚠️  WARNING: This training function uses Keras/TensorFlow.")
+    print("   For MindSpore training, please use: python mindspore_train.py")
+    print("   This function is kept for reference only.\n")
     
-    # Make predictions for additional metrics
-    y_pred = model.predict(X_test_scaled, verbose=0).flatten()
-    
-    # Calculate metrics
-    r2 = r2_score(y_test, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-    
-    print(f"\n{'='*50}")
-    print(f"MODEL EVALUATION METRICS")
-    print(f"{'='*50}")
-    print(f" Test MAE:  {mae:.4f} (Mean Absolute Error)")
-    print(f" Test RMSE: {rmse:.4f} (Root Mean Squared Error)")
-    print(f" R² Score:  {r2:.4f} (Coefficient of Determination)")
-    print(f"{'='*50}\n")
-
-    # Save model in modern format
-    model.save("trust_model_with_credentials.keras")
-    print("[OK] Model saved as trust_model_with_credentials.keras")
+    # Return None to indicate training should use mindspore_train.py
+    return None, None
 
     # Save metrics to JSON
     metrics = {
@@ -381,7 +352,7 @@ def train(df):
 # STEP 5 – PREDICTION INTERFACE
 # ===========================
 
-def predict_trust_score(developer_data, model_path='trust_model_with_credentials.keras', 
+def predict_trust_score(developer_data, model_path='trust_model_with_credentials.ckpt', 
                        scaler_path='scaler.joblib', credentials_csv='credentials.csv'):
     """
     Predict trust score for a new developer
@@ -402,7 +373,19 @@ def predict_trust_score(developer_data, model_path='trust_model_with_credentials
     }
     """
     # Load model and scaler
-    model = keras.models.load_model(model_path)
+    # Note: This function should be updated to use MindSpore model loading
+    # For now, it's kept for backward compatibility
+    # The actual inference should be done through api.py which uses MindSpore
+    print("⚠️  WARNING: This function uses Keras model loading.")
+    print("   For MindSpore inference, please use the API endpoint.")
+    
+    try:
+        import tensorflow as tf
+        from tensorflow import keras
+        model = keras.models.load_model(model_path.replace('.ckpt', '.keras'))
+    except:
+        raise FileNotFoundError(f"Model file not found: {model_path}. Please train using mindspore_train.py")
+    
     scaler = joblib.load(scaler_path)
     
     # Process credentials

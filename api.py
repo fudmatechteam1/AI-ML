@@ -6,9 +6,11 @@ import numpy as np
 import joblib
 import json
 import pandas as pd
-import tensorflow as tf
+import mindspore as ms
+from mindspore import Tensor, context
 from datetime import datetime
 import os
+import model as model_module  # Import the MindSpore model definition
 
 # Initialize FastAPI
 app = FastAPI(
@@ -115,20 +117,38 @@ class CredentialVerifier:
         return breakdown
 
 
+# Set MindSpore context
+context.set_context(mode=context.GRAPH_MODE, device_target="CPU")  # Change to "GPU" if GPU available
+
 # Load model, scaler, and credential verifier on startup
 try:
-    model = tf.keras.models.load_model('trust_model_with_credentials.keras')
-    scaler = joblib.load('scaler.joblib')
+    # Load MindSpore model checkpoint
+    model_path = 'trust_model_with_credentials.ckpt'
+    scaler_path = 'scaler.joblib'
+    
+    # Determine input dimension (9 features)
+    input_dim = 9
+    trust_model = model_module.TrustScoreModel(input_dim)
+    
+    # Load checkpoint
+    param_dict = ms.load_checkpoint(model_path)
+    ms.load_param_into_net(trust_model, param_dict)
+    trust_model.set_train(False)  # Set to evaluation mode
+    
+    scaler = joblib.load(scaler_path)
     credential_verifier = CredentialVerifier('credentials.csv')
     
     # Load metrics if available
-    with open('model_metrics.json', 'r') as f:
-        model_info = json.load(f)
+    try:
+        with open('model_metrics.json', 'r') as f:
+            model_info = json.load(f)
+    except:
+        model_info = {}
     
-    print("✓ Model loaded successfully")
+    print("✓ MindSpore model loaded successfully")
 except Exception as e:
     print(f"⚠ Warning: Could not load model - {e}")
-    model = None
+    trust_model = None
     scaler = None
     credential_verifier = CredentialVerifier('credentials.csv')
     model_info = {}
@@ -290,13 +310,14 @@ def get_confidence_level(score: float) -> str:
 def predict_trust_score(profile: DeveloperProfile):
     """Predict trust score for a developer"""
     
-    if model is None or scaler is None:
+    if trust_model is None or scaler is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     
     # Calculate features
     features_dict = calculate_features(profile)
     
     # Prepare features array in correct order (must match training)
+    # Note: github_score is NOT used in training, only the 9 features below
     features = np.array([[
         features_dict['popularity_score'],
         features_dict['activity_score'],
@@ -306,16 +327,17 @@ def predict_trust_score(profile: DeveloperProfile):
         features_dict['repo_count'],
         features_dict['credential_score'],
         features_dict['credential_count'],
-        features_dict['credential_diversity'],
-        features_dict['github_score']
-    ]])
+        features_dict['credential_diversity']
+    ]], dtype=np.float32)
     
     # Scale features
-    features_scaled = scaler.transform(features)
+    features_scaled = scaler.transform(features).astype(np.float32)
     
-    # Predict
-    trust_score = model.predict(features_scaled, verbose=0)[0][0]
-    trust_score = float(np.clip(trust_score, 0, 10))
+    # Predict using MindSpore model
+    features_tensor = Tensor(features_scaled)
+    trust_model.set_train(False)  # Ensure evaluation mode
+    prediction = trust_model(features_tensor)
+    trust_score = float(np.clip(prediction.asnumpy()[0][0], 0, 10))
     
     # Calculate breakdown percentages for display
     github_weight = 60
@@ -397,7 +419,8 @@ async def root():
         "features": [
             "GitHub activity analysis",
             "Professional credential verification",
-            "Dual-component trust scoring (60% GitHub + 35% Credentials + 5% Diversity)"
+            "Dual-component trust scoring (60% GitHub + 35% Credentials + 5% Diversity)",
+            "Powered by Huawei MindSpore"
         ],
         "endpoints": {
             "health": "/health",
@@ -414,8 +437,8 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return HealthResponse(
-        status="healthy" if model is not None else "model_not_loaded",
-        model_loaded=model is not None,
+        status="healthy" if trust_model is not None else "model_not_loaded",
+        model_loaded=trust_model is not None,
         credentials_enabled=credential_verifier.enabled if credential_verifier else False,
         model_info=model_info
     )
