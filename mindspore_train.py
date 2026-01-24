@@ -152,7 +152,7 @@ def train_mindspore_model(df, model_save_path='trust_model_with_credentials.ckpt
             loss = loss_fn(pred, labels)
             mae = nn.MAE()(pred, labels)
             val_losses.append(loss.asnumpy())
-            val_maes.append(mae.asnumpy())
+            val_maes.append(mae)
         
         avg_val_loss = np.mean(val_losses)
         avg_val_mae = np.mean(val_maes)
