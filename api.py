@@ -517,37 +517,21 @@ async def predict_batch(request: BatchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/v1/credentials", response_model=dict)
+@app.get("/api/v1/credentials", response_model=List[Dict])
 async def list_credentials():
     """
-    Get list of all supported credentials in the database
-    
-    Returns information about certifications, licenses, and degrees that can be verified
+    Get flat list of supported credentials for Frontend Dropdown.
+    Returns: List of dicts [{name, vendor, category, weight}, ...]
     """
-    if not credential_verifier.enabled:
-        raise HTTPException(status_code=503, detail="Credential verification not available")
-    
-    credentials_list = credential_verifier.credentials_df.to_dict('records')
-    
-    # Group by category
-    by_category = {}
-    for cred in credentials_list:
-        category = cred['category']
-        if category not in by_category:
-            by_category[category] = []
-        by_category[category].append({
-            'name': cred['name'],
-            'vendor': cred['vendor'],
-            'weight': cred['weight'],
-            'type': cred['type'],
-            'difficulty': cred['verification_difficulty']
-        })
-    
-    return {
-        "total_credentials": len(credentials_list),
-        "categories": list(by_category.keys()),
-        "credentials_by_category": by_category
-    }
+    # Try loading from CSV first
+    creds = load_credentials_from_csv()
+    # If CSV fails, try to get data from the loaded verifier
+    if not creds and credential_verifier.enabled and credential_verifier.credentials_df is not None:
+        creds = credential_verifier.credentials_df.to_dict('records')
+    # Return empty list instead of 404/Null to prevent Frontend crash
+    if not creds:
+        return []
+    return creds
 
 
 @app.get("/api/v1/metrics", response_model=dict)
@@ -574,6 +558,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "api:app",
         host="0.0.0.0",
-        port=8000,
+        port=5000, # CHANGED TO 5000
         reload=True
     )
