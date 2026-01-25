@@ -11,6 +11,7 @@ from mindspore import Tensor, context
 from datetime import datetime
 import os
 import model as model_module  # Import the MindSpore model definition
+import csv
 
 # Initialize FastAPI
 app = FastAPI(
@@ -406,6 +407,23 @@ def predict_trust_score(profile: DeveloperProfile):
     )
 
 
+def load_credentials_from_csv(csv_path='credentials.csv'):
+    """Load credentials from CSV and return a list of dicts with name, vendor, category, weight"""
+    credentials = []
+    if not os.path.exists(csv_path):
+        return credentials
+    with open(csv_path, newline='', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            credentials.append({
+                'name': row.get('name', ''),
+                'vendor': row.get('vendor', ''),
+                'category': row.get('category', ''),
+                'weight': float(row.get('weight', 0))
+            })
+    return credentials
+
+
 # ===========================
 # API ENDPOINTS
 # ===========================
@@ -538,6 +556,13 @@ async def get_metrics():
     if not model_info:
         raise HTTPException(status_code=404, detail="Model metrics not found")
     return model_info
+
+
+@app.get("/api/v1/credentials/list", response_model=List[Dict])
+async def get_supported_credentials():
+    """Return a flat list of supported credentials (name, vendor, category, weight)"""
+    creds = load_credentials_from_csv()
+    return creds
 
 
 # ===========================
