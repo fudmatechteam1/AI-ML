@@ -11,7 +11,6 @@ from mindspore import Tensor, context
 from datetime import datetime
 import os
 import model as model_module  # Import the MindSpore model definition
-import csv
 
 # Initialize FastAPI
 app = FastAPI(
@@ -407,23 +406,6 @@ def predict_trust_score(profile: DeveloperProfile):
     )
 
 
-def load_credentials_from_csv(csv_path='credentials.csv'):
-    """Load credentials from CSV and return a list of dicts with name, vendor, category, weight"""
-    credentials = []
-    if not os.path.exists(csv_path):
-        return credentials
-    with open(csv_path, newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            credentials.append({
-                'name': row.get('name', ''),
-                'vendor': row.get('vendor', ''),
-                'category': row.get('category', ''),
-                'weight': float(row.get('weight', 0))
-            })
-    return credentials
-
-
 # ===========================
 # API ENDPOINTS
 # ===========================
@@ -517,21 +499,37 @@ async def predict_batch(request: BatchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/v1/credentials", response_model=List[Dict])
+@app.get("/api/v1/credentials", response_model=dict)
 async def list_credentials():
     """
-    Get flat list of supported credentials for Frontend Dropdown.
-    Returns: List of dicts [{name, vendor, category, weight}, ...]
+    Get list of all supported credentials in the database
+    
+    Returns information about certifications, licenses, and degrees that can be verified
     """
-    # Try loading from CSV first
-    creds = load_credentials_from_csv()
-    # If CSV fails, try to get data from the loaded verifier
-    if not creds and credential_verifier.enabled and credential_verifier.credentials_df is not None:
-        creds = credential_verifier.credentials_df.to_dict('records')
-    # Return empty list instead of 404/Null to prevent Frontend crash
-    if not creds:
-        return []
-    return creds
+    if not credential_verifier.enabled:
+        raise HTTPException(status_code=503, detail="Credential verification not available")
+    
+    credentials_list = credential_verifier.credentials_df.to_dict('records')
+    
+    # Group by category
+    by_category = {}
+    for cred in credentials_list:
+        category = cred['category']
+        if category not in by_category:
+            by_category[category] = []
+        by_category[category].append({
+            'name': cred['name'],
+            'vendor': cred['vendor'],
+            'weight': cred['weight'],
+            'type': cred['type'],
+            'difficulty': cred['verification_difficulty']
+        })
+    
+    return {
+        "total_credentials": len(credentials_list),
+        "categories": list(by_category.keys()),
+        "credentials_by_category": by_category
+    }
 
 
 @app.get("/api/v1/metrics", response_model=dict)
@@ -540,13 +538,6 @@ async def get_metrics():
     if not model_info:
         raise HTTPException(status_code=404, detail="Model metrics not found")
     return model_info
-
-
-@app.get("/api/v1/credentials/list", response_model=List[Dict])
-async def get_supported_credentials():
-    """Return a flat list of supported credentials (name, vendor, category, weight)"""
-    creds = load_credentials_from_csv()
-    return creds
 
 
 # ===========================
@@ -558,6 +549,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "api:app",
         host="0.0.0.0",
-        port=5000, # CHANGED TO 5000
+        port=8000,
         reload=True
     )
